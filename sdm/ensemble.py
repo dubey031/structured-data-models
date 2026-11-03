@@ -146,6 +146,7 @@ class EnsembleTable(DeviceMixin, EnsembleData[TableTensor]):
         tables: Sequence[TableTensor],
     ) -> tuple[tuple[TableTensor, ...], tuple[tuple[int, int], ...]]:
         compatible_groups: dict[tuple[object, ...], list[int]] = {}
+        compatibility_keys: list[tuple[object, ...]] = []
         vocabularies: list[tuple[Tensor, ...]] = []
         for index, table in enumerate(tables):
             if torch.compiler.is_compiling():
@@ -169,7 +170,7 @@ class EnsembleTable(DeviceMixin, EnsembleData[TableTensor]):
                 )
             # Shape, schema, block layout, device, and categorical vocabularies
             # must match for torch.stack to preserve member semantics.
-            compatibility_key = (
+            compatibility_key: tuple[object, ...] = (
                 table.column_groups,
                 tuple(
                     (
@@ -184,6 +185,15 @@ class EnsembleTable(DeviceMixin, EnsembleData[TableTensor]):
                 table.device,
                 vocabulary_key,
             )
+            if torch.compiler.is_compiling():
+                # Hash a group index instead of specializing symbolic sizes.
+                for key_id, key in enumerate(compatibility_keys):
+                    if key == compatibility_key:
+                        compatibility_key = (key_id,)
+                        break
+                else:
+                    compatibility_keys.append(compatibility_key)
+                    compatibility_key = (len(compatibility_keys) - 1,)
             compatible_groups.setdefault(compatibility_key, []).append(index)
 
         groups: list[TableTensor] = []
